@@ -1,2 +1,2 @@
-# simple-mp3-merger
-Simple mp3 merger 
+# simple-audio-merger
+Simple audio merger 
