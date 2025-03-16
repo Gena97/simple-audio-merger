@@ -1,0 +1,4 @@
+*.exe
+.idea/
+/simple-audio-merger-logs.txt
+*.mp3
