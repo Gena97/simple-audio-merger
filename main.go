@@ -36,7 +36,7 @@ func main() {
 			return err
 		}
 		if !info.IsDir() && (filepath.Ext(path) == ".mp3" || filepath.Ext(path) == ".wav") {
-			_, err := f.WriteString(fmt.Sprintf("file_%d '%s'\n", fileIndex, path))
+			_, err := f.WriteString(fmt.Sprintf("file '%s'\n", path))
 			fileIndex++
 			if err != nil {
 				return err
