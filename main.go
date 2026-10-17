@@ -1,64 +1,83 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 func main() {
-	inputDir := flag.String("input", "", "Path to the folder with audio files")
-	outputFile := flag.String("output", "merged_audio.mp3", "Name of the output file")
-	bitrate := flag.String("bitrate", "320", "Bitrate for output file (e.g., 128k, 192k, 320k)")
+	if len(os.Args) == 1 {
+		if err := runGUI(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	inputDir := flag.String("input", "", "Path to the folder with MP3 and WAV files (including subfolders)")
+	outputFile := flag.String("output", "merged_audio.mp3", "Path to the output MP3 file")
+	bitrate := flag.String("bitrate", "320", "MP3 bitrate in kbps (e.g., 128, 192, 320)")
+	overwrite := flag.Bool("overwrite", false, "Replace an existing output file")
 	flag.Parse()
 
-	if *inputDir == "" {
-		fmt.Println("Error: You must specify the path to the folder with audio files using -input")
-		return
+	if *inputDir == "" || flag.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "Error: Specify an audio folder using -input")
+		flag.Usage()
+		os.Exit(1)
 	}
 
-	listFile := "simple-audio-merger-logs.txt"
-
-	// Open file for the list
-	f, err := os.Create(listFile)
+	bitrateValue, err := strconv.Atoi(strings.TrimSuffix(strings.ToLower(strings.TrimSpace(*bitrate)), "k"))
 	if err != nil {
-		fmt.Println("Error creating file list:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error: Bitrate must be a number in kbps, e.g., 192")
+		os.Exit(1)
 	}
-	defer f.Close()
 
-	fileIndex := 1
-	// Search for all audio files in the folder
-	err = filepath.Walk(*inputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && (filepath.Ext(path) == ".mp3" || filepath.Ext(path) == ".wav") {
-			_, err := f.WriteString(fmt.Sprintf("file '%s'\n", path))
-			fileIndex++
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
+	paths, err := collectAudioFiles(*inputDir)
 	if err != nil {
-		fmt.Println("Error scanning folder:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error scanning folder:", err)
+		os.Exit(1)
 	}
 
-	// Run ffmpeg to merge files with specified bitrate
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "libmp3lame", "-b:a", fmt.Sprintf("%sk", *bitrate), *outputFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Error executing ffmpeg:", err)
-		return
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	err = mergeFiles(ctx, paths, *outputFile, bitrateValue, *overwrite)
+	stop()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error merging audio:", err)
+		os.Exit(1)
 	}
 
 	fmt.Println("Merging completed! Output file:", *outputFile)
+}
+
+func collectAudioFiles(inputDir string) ([]string, error) {
+	info, err := os.Stat(inputDir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("input must be a folder: %s", inputDir)
+	}
+
+	var paths []string
+	err = filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && isSupportedAudio(path) {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	return paths, err
+}
+
+func isSupportedAudio(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".mp3" || ext == ".wav"
 }

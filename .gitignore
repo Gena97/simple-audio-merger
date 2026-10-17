@@ -2,3 +2,5 @@
 .idea/
 /simple-audio-merger-logs.txt
 *.mp3
+dist/
+*.syso
